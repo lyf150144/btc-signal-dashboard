@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC 合约信号监控面板</title>
+    <style>
+        :root {
+            --bg: #0d1117; --card-bg: #161b22; --border: #30363d;
+            --text: #c9d1d9; --text-dim: #8b949e;
+            --green: #3fb950; --red: #f85149; --orange: #d2991d; --blue: #58a6ff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .header { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header .status-bar { display: flex; gap: 16px; align-items: center; font-size: 13px; }
+        .live-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .refresh-timer { color: var(--text-dim); }
+
+        /* Alert */
+        .alert-banner { margin: 16px 24px; padding: 20px 28px; border-radius: 8px; font-size: 18px; font-weight: 700; text-align: center; display: none; animation: slideDown 0.4s ease-out; }
+        @keyframes slideDown { from{transform:translateY(-20px);opacity:0} to{transform:translateY(0);opacity:1} }
+        .alert-banner.active { display: block; }
+        .alert-banner.long { background: linear-gradient(135deg, #1a3a2a, #0d3320); border: 2px solid var(--green); color: var(--green); }
+        .alert-banner.short { background: linear-gradient(135deg, #3a1a1a, #330d0d); border: 2px solid var(--red); color: var(--red); }
+        .alert-banner .alert-icon { font-size: 32px; margin-right: 12px; }
+        .alert-banner .alert-sub { font-size: 13px; font-weight: 400; margin-top: 6px; opacity: 0.85; }
+        .alert-banner .alert-sl { font-size: 12px; font-weight: 400; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.15); display: flex; justify-content: center; gap: 32px; flex-wrap: wrap; }
+
+        /* Status Grid */
+        .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 0 24px 16px; }
+        .status-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+        .status-card .card-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .status-card .card-value { font-size: 22px; font-weight: 700; }
+        .status-card .card-detail { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+        .status-card.bullish .card-value { color: var(--green); }
+        .status-card.bearish .card-value { color: var(--red); }
+        .status-card.neutral .card-value { color: var(--blue); }
+        .status-card.active-signal { border-color: var(--green); box-shadow: 0 0 20px rgba(63,185,80,0.15); }
+        .status-card.active-signal.bearish { border-color: var(--red); box-shadow: 0 0 20px rgba(248,81,73,0.15); }
+
+        /* P&L Summary */
+        .pnl-summary { margin: 0 24px 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+        .pnl-summary .pnl-item { display: flex; flex-direction: column; gap: 2px; }
+        .pnl-summary .pnl-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; }
+        .pnl-summary .pnl-value { font-size: 20px; font-weight: 700; }
+        .pnl-summary .pnl-value.positive { color: var(--green); }
+        .pnl-summary .pnl-value.negative { color: var(--red); }
+
+        /* Trade Table */
+        .section-title { margin: 24px 24px 12px; font-size: 16px; font-weight: 600; color: var(--text); }
+        .trade-table-wrap { margin: 0 24px 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; max-height: 500px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #1c2333; padding: 10px 14px; text-align: left; font-weight: 600; color: var(--text-dim); position: sticky; top: 0; z-index: 1; }
+        td { padding: 8px 14px; border-top: 1px solid var(--border); white-space: nowrap; }
+        tr:hover td { background: rgba(255,255,255,0.03); }
+        .tag-long { color: var(--green); }
+        .tag-short { color: var(--red); }
+        .tag-tp { color: var(--green); font-weight: 600; }
+        .tag-sl { color: var(--red); font-weight: 600; }
+        .tag-pending { color: var(--orange); }
+        .tag-timeout { color: var(--text-dim); }
+        .pnl-positive { color: var(--green); }
+        .pnl-negative { color: var(--red); }
+
+        @media (max-width: 900px) {
+            .status-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        .footer { text-align: center; padding: 16px; color: var(--text-dim); font-size: 11px; border-top: 1px solid var(--border); margin-top: 16px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>BTC 合约信号监控</h1>
+        <div class="status-bar">
+            <span><span class="live-dot"></span> 实时</span>
+            <span class="refresh-timer" id="refresh-timer">下次刷新: 60s</span>
+            <span id="last-update" style="color:var(--text-dim)">--</span>
+        </div>
+    </div>
+
+    <!-- 信号警报 -->
+    <div class="alert-banner" id="alert-banner">
+        <div>
+            <span class="alert-icon" id="alert-icon"></span>
+            <span id="alert-text"></span>
+        </div>
+        <div class="alert-sub" id="alert-sub"></div>
+        <div class="alert-sl" id="alert-sl"></div>
+    </div>
+
+    <!-- 状态卡片 -->
+    <div class="status-grid" id="status-grid">
+        <div class="status-card neutral" id="card-daily">
+            <div class="card-label">日线趋势 (EMA20)</div>
+            <div class="card-value">--</div>
+            <div class="card-detail">加载中...</div>
+        </div>
+        <div class="status-card neutral" id="card-h4">
+            <div class="card-label">4H 触发状态</div>
+            <div class="card-value">--</div>
+            <div class="card-detail">加载中...</div>
+        </div>
+        <div class="status-card neutral" id="card-h1">
+            <div class="card-label">1H 入场信号</div>
+            <div class="card-value">--</div>
+            <div class="card-detail">加载中...</div>
+        </div>
+        <div class="status-card neutral" id="card-trade">
+            <div class="card-label">交易信号</div>
+            <div class="card-value">--</div>
+            <div class="card-detail">等待条件满足...</div>
+        </div>
+    </div>
+
+    <!-- 盈亏汇总 -->
+    <div class="pnl-summary" id="pnl-summary">
+        <div class="pnl-item"><span class="pnl-label">初始资金</span><span class="pnl-value" id="pnl-initial">1000 U</span></div>
+        <div class="pnl-item"><span class="pnl-label">当前资金</span><span class="pnl-value" id="pnl-current" style="color:var(--blue)">1000 U</span></div>
+        <div class="pnl-item"><span class="pnl-label">总盈亏</span><span class="pnl-value" id="pnl-total">0 U</span></div>
+        <div class="pnl-item"><span class="pnl-label">总手续费</span><span class="pnl-value" id="pnl-fees" style="color:var(--text-dim)">0 U</span></div>
+        <div class="pnl-item"><span class="pnl-label">已完结</span><span class="pnl-value" id="pnl-closed" style="color:var(--text)">0</span></div>
+        <div class="pnl-item"><span class="pnl-label">胜率</span><span class="pnl-value" id="pnl-winrate" style="color:var(--text)">--</span></div>
+        <div class="pnl-item"><span class="pnl-label">数学期望</span><span class="pnl-value" id="pnl-expect" style="color:var(--text)">--</span></div>
+    </div>
+
+    <!-- 交易记录表 -->
+    <div class="section-title">交易记录</div>
+    <div class="trade-table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th><th>状态</th><th>方向</th><th>信号</th><th>入场时间</th><th>入场价</th>
+                    <th>止损</th><th>止盈</th><th>离场价</th><th>离场时间</th>
+                    <th>仓位</th><th>盈亏(U)</th><th>盈亏%</th>
+                </tr>
+            </thead>
+            <tbody id="trade-body">
+                <tr><td colspan="13" style="text-align:center;color:var(--text-dim);padding:24px">暂无交易记录</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">BTC 合约信号监控 — 框架: 日线EMA20 → 4H触发 → 1H入场 → 1:2止盈 — 自动刷新60s — 数据来源Binance</div>
+
+    <script>
+        let countdown = 60;
+        const REFRESH = 60;
+
+        function updateTimer() {
+            document.getElementById('refresh-timer').textContent = `下次刷新: ${countdown}s`;
+            countdown--;
+            if (countdown < 0) { countdown = REFRESH; loadAll(); }
+        }
+        setInterval(updateTimer, 1000);
+
+        // === Audio ===
+        let audioCtx = null;
+        function playBeep() {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(1200, audioCtx.currentTime+0.1);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.3);
+                osc.start(); osc.stop(audioCtx.currentTime+0.3);
+            } catch(e) {}
+        }
+
+        let lastAlertState = null;
+
+        // === Load Status ===
+        async function loadStatus() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                if (data.status === 'API_ERROR') return;
+                updateCards(data);
+                updateAlert(data);
+            } catch(err) { console.error(err); }
+        }
+
+        function updateCards(data) {
+            const cd = document.getElementById('card-daily');
+            cd.className = 'status-card ' + (data.daily.trend==='BULLISH'?'bullish':'bearish');
+            cd.querySelector('.card-value').textContent = data.daily.trend==='BULLISH' ? '看多' : '看空';
+            cd.querySelector('.card-detail').textContent = `收盘 ${data.daily.close} | EMA20 ${data.daily.ema20} | ${data.daily.pct_diff}%`;
+
+            const c4 = document.getElementById('card-h4');
+            const tmap = {'EMA_PULLBACK':'回踩EMA20','BREAKOUT':'突破关键结构','NONE':'无触发'};
+            c4.className = 'status-card ' + (data.h4.trigger!=='NONE'?'bullish':'neutral');
+            c4.querySelector('.card-value').textContent = (data.h4.trigger!=='NONE'?'OK ':'') + tmap[data.h4.trigger];
+            c4.querySelector('.card-detail').textContent = `距EMA ${data.h4.pct_from_ema}% | DC ${data.h4.donchian_low}~${data.h4.donchian_high}`;
+
+            const c1 = document.getElementById('card-h1');
+            if (data.h1.has_entry) {
+                const s = data.h1.signals[0];
+                const smap = {'BULLISH_ENGULFING':'看涨吞没','BEARISH_ENGULFING':'看跌吞没','BULLISH_PINBAR':'看涨Pinbar','BEARISH_PINBAR':'看跌Pinbar'};
+                c1.className = 'status-card ' + (s.direction==='LONG'?'bullish':'bearish') + ' active-signal' + (s.direction==='SHORT'?' bearish':'');
+                c1.querySelector('.card-value').textContent = smap[s.type] || s.type;
+                c1.querySelector('.card-detail').textContent = `${s.direction} @ ${s.price} | ATR ${data.h1.current_atr}`;
+            } else {
+                c1.className = 'status-card neutral';
+                c1.querySelector('.card-value').textContent = '无信号';
+                c1.querySelector('.card-detail').textContent = '最近3根1HK线未检测到入场形态';
+            }
+
+            const ct = document.getElementById('card-trade');
+            if (data.trade_ready) {
+                ct.className = 'status-card ' + (data.daily.direction==='LONG'?'bullish':'bearish') + ' active-signal' + (data.daily.direction==='SHORT'?' bearish':'');
+                ct.querySelector('.card-value').textContent = '开仓信号!';
+                ct.querySelector('.card-detail').textContent = `条件满足 — 建议开${data.daily.direction==='LONG'?'多':'空'}`;
+            } else if (data.has_pending) {
+                ct.className = 'status-card neutral';
+                ct.querySelector('.card-value').textContent = '持仓中';
+                ct.querySelector('.card-detail').textContent = '已有持仓，止损/止盈后方可开新单';
+            } else {
+                ct.className = 'status-card neutral';
+                ct.querySelector('.card-value').textContent = '等待中';
+                ct.querySelector('.card-detail').textContent = '条件未全部满足';
+            }
+
+            document.getElementById('last-update').textContent = data.timestamp;
+        }
+
+        function updateAlert(data) {
+            const banner = document.getElementById('alert-banner');
+            const icon = document.getElementById('alert-icon');
+            const text = document.getElementById('alert-text');
+            const sub = document.getElementById('alert-sub');
+            const sl = document.getElementById('alert-sl');
+
+            const stateKey = `${data.trade_ready}_${data.daily.direction}_${data.h4.trigger}_${data.h1.has_entry}_${data.has_pending}`;
+            if (stateKey === lastAlertState) return;
+            lastAlertState = stateKey;
+
+            banner.className = 'alert-banner';
+            if (data.trade_ready && data.current_signal) {
+                const s = data.current_signal;
+                const isLong = s.direction === 'LONG';
+                banner.classList.add(isLong ? 'long' : 'short', 'active');
+                icon.textContent = isLong ? '' : '';
+                text.textContent = isLong ? '做多信号触发!' : '做空信号触发!';
+                sub.textContent = `日线${isLong?'看涨':'看跌'} + 4H${data.h4.trigger==='EMA_PULLBACK'?'回踩EMA20':'突破结构'} + 1H入场形态确认`;
+                sl.innerHTML = `
+                    <span>入场: <b>${s.entry_price}</b></span>
+                    <span>止损: <b style="color:#f85149">${s.stop_loss}</b> (${s.stop_pct}%)</span>
+                    <span>止盈: <b style="color:#3fb950">${s.take_profit}</b> (${(s.stop_pct*2).toFixed(2)}%)</span>
+                    <span>仓位: <b>${s.position_value}U</b></span>
+                    <span>保证金: <b>${s.margin}U</b></span>
+                    <span>ATR: <b>${s.atr}</b></span>
+                `;
+                if (data.trade_created) { playBeep(); setTimeout(playBeep,500); setTimeout(playBeep,1000); }
+            } else {
+                banner.classList.remove('active');
+                banner.style.display = 'none';
+            }
+        }
+
+        // === Load Trades & Summary ===
+        async function loadTrades() {
+            try {
+                const [tResp, sResp] = await Promise.all([
+                    fetch('/api/trades'), fetch('/api/summary')
+                ]);
+                const trades = await tResp.json();
+                const sum = await sResp.json();
+                renderSummary(sum);
+                renderTrades(trades);
+            } catch(err) { console.error(err); }
+        }
+
+        function renderSummary(s) {
+            document.getElementById('pnl-initial').textContent = s.initial_capital + ' U';
+            const curEl = document.getElementById('pnl-current');
+            curEl.textContent = s.current_capital + ' U';
+            curEl.className = 'pnl-value ' + (s.total_pnl >= 0 ? 'positive' : 'negative');
+
+            const pnlEl = document.getElementById('pnl-total');
+            pnlEl.textContent = (s.total_pnl >= 0 ? '+' : '') + s.total_pnl + ' U (' + (s.total_pnl_pct >= 0 ? '+' : '') + s.total_pnl_pct + '%)';
+            pnlEl.className = 'pnl-value ' + (s.total_pnl >= 0 ? 'positive' : 'negative');
+
+            document.getElementById('pnl-fees').textContent = s.total_fees + ' U';
+            document.getElementById('pnl-closed').textContent = s.closed_trades + (s.pending_trades > 0 ? ' (' + s.pending_trades + ' 待定)' : '');
+            document.getElementById('pnl-winrate').textContent = s.win_rate + '%';
+            document.getElementById('pnl-expect').textContent = (s.expectancy >= 0 ? '+' : '') + s.expectancy + ' U/笔';
+        }
+
+        function renderTrades(trades) {
+            const tbody = document.getElementById('trade-body');
+            if (!trades || trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-dim);padding:24px">暂无交易记录</td></tr>';
+                return;
+            }
+            const smap = {'BULLISH_ENGULFING':'看涨吞没','BEARISH_ENGULFING':'看跌吞没','BULLISH_PINBAR':'看涨Pinbar','BEARISH_PINBAR':'看跌Pinbar'};
+            const tmap = {'EMA_PULLBACK':'回踩EMA20','BREAKOUT':'突破结构','NONE':'-'};
+
+            tbody.innerHTML = trades.map(t => {
+                const statusClass = t.status === 'TAKE_PROFIT' ? 'tag-tp' : t.status === 'STOP_LOSS' ? 'tag-sl' : t.status === 'PENDING' ? 'tag-pending' : 'tag-timeout';
+                const statusText = {'TAKE_PROFIT':'止盈','STOP_LOSS':'止损','PENDING':'持仓中','TIMEOUT':'超时平仓'}[t.status] || t.status;
+                const dirClass = t.direction === 'LONG' ? 'tag-long' : 'tag-short';
+                const pnlClass = (t.pnl_amount || 0) >= 0 ? 'pnl-positive' : 'pnl-negative';
+                return `<tr>
+                    <td>${t.id}</td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td><span class="${dirClass}">${t.direction}</span></td>
+                    <td>${smap[t.signal_type] || t.signal_type}</td>
+                    <td>${(t.entry_time||'').replace('T',' ').slice(0,16)}</td>
+                    <td>${t.entry_price}</td>
+                    <td style="color:#f85149">${t.stop_loss}</td>
+                    <td style="color:#3fb950">${t.take_profit}</td>
+                    <td>${t.exit_price || '-'}</td>
+                    <td>${t.exit_time ? (t.exit_time||'').replace('T',' ').slice(0,16) : '-'}</td>
+                    <td>${t.position_value}U</td>
+                    <td class="${pnlClass}">${t.status !== 'PENDING' ? ((t.pnl_amount >= 0 ? '+' : '') + t.pnl_amount) : '-'}</td>
+                    <td class="${pnlClass}">${t.status !== 'PENDING' ? ((t.pnl_pct >= 0 ? '+' : '') + t.pnl_pct + '%') : '-'}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function loadAll() {
+            await Promise.all([loadStatus(), loadTrades()]);
+        }
+
+        // 初始加载
+        loadAll();
+
+        // 定时刷新
+        setInterval(() => { countdown = REFRESH; loadAll(); }, REFRESH * 1000);
+    </script>
+</body>
+</html>

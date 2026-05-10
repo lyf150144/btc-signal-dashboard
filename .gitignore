@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+trades_log.json
+backtest_summary.json
+trades_detail.csv
+合约框架.txt
+.claude/
