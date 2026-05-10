@@ -54,12 +54,28 @@ def save_trades(trades):
 # ============================================================
 # 数据获取
 # ============================================================
+BINANCE_APIS = [
+    "https://api.binance.com/api/v3/klines",
+    "https://api.binance.us/api/v3/klines",
+    "https://api-gcp.binance.com/api/v3/klines",
+]
+
+
 def fetch_klines(symbol="BTCUSDT", interval="1h", limit=500):
-    url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": symbol, "interval": interval, "limit": limit}
-    resp = requests.get(url, params=params, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
+    for base_url in BINANCE_APIS:
+        try:
+            resp = requests.get(base_url, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            if not isinstance(data, list) or len(data) == 0:
+                continue
+            break
+        except Exception:
+            continue
+    else:
+        raise RuntimeError("所有 Binance API 不可用")
+
     df = pd.DataFrame(data, columns=[
         "open_time", "open", "high", "low", "close", "volume",
         "close_time", "quote_vol", "trades", "taker_buy_vol",
